@@ -1,0 +1,6 @@
+# Project exclude paths
+/target/
+dependency-reduced-pom.xml
+.idea/
+PrivateLinkCrossAccount.iml
+remoteaccountpython/remoteaccountpython.iml

@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  MSKKafkaVersion:
+    Type: String
+    Default: 2.3.1
+    AllowedValues:
+      - 1.1.1
+      - 2.2.1
+      - 2.3.1
+      - 2.4.1
+  TLSMutualAuthentication:
+      Type: String
+      Default: false
+      Description: Whether TLS Mutual Auth should be enabled for the Amazon MSK cluster.
+      AllowedValues:
+        - true
+        - false
+  PCAARN:
+      Type: String
+      AllowedPattern: 'arn:aws:acm-pca:[us\-east\-1|us\-east\-2|eu\-west\-1]{9}:\d{12}:certificate-authority\/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}|^$'
+      ConstraintDescription: Not a Valid ACM PCA ARN
+      Description: Provide the ARN for an ACM PCA in your account
+  VPCStack:
+    Description: The name of the VPC stack
+    Type: String
+  BastionStack:
+    Description: The name of the Bastion/Kafka client instance stack
+    Type: String
+Conditions: 
+  MTLS: !Equals [ !Ref TLSMutualAuthentication, true ]
+  noMTLS: !Equals [ !Ref TLSMutualAuthentication, false ]
+
+Resources:
+  MSKSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MSK Security Group
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${VPCStack}-VPCID"  
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 2181
+        ToPort: 2181
+        SourceSecurityGroupId: 
+          Fn::ImportValue:
+            !Sub "${BastionStack}-KafkaClientEC2InstanceSecurityGroupId"
+      - IpProtocol: tcp
+        FromPort: 9094
+        ToPort: 9094
+        SourceSecurityGroupId:
+          Fn::ImportValue:
+            !Sub "${BastionStack}-KafkaClientEC2InstanceSecurityGroupId"
+      - IpProtocol: tcp
+        FromPort: 9092
+        ToPort: 9092
+        SourceSecurityGroupId:
+          Fn::ImportValue:
+            !Sub "${BastionStack}-KafkaClientEC2InstanceSecurityGroupId"
+
+  MSKClusterMTLS:
+    Type: AWS::MSK::Cluster
+    Condition: MTLS
+    Properties: 
+      BrokerNodeGroupInfo: 
+        ClientSubnets: 
+        - Fn::ImportValue:
+            !Sub "${VPCStack}-PrivateSubnetMSKOne"
+        - Fn::ImportValue:
+            !Sub "${VPCStack}-PrivateSubnetMSKTwo"
+        - Fn::ImportValue:
+            !Sub "${VPCStack}-PrivateSubnetMSKThree"
+        InstanceType: kafka.m5.large
+        SecurityGroups: [!GetAtt MSKSecurityGroup.GroupId]
+        StorageInfo: 
+          EBSStorageInfo:
+            VolumeSize: 1000
+      ClusterName: !Join
+                    - '-'
+                    - - 'MSKCluster'
+                      - !Ref 'AWS::StackName'
+      EncryptionInfo: 
+        EncryptionInTransit: 
+          ClientBroker: TLS_PLAINTEXT
+          InCluster: true
+      ClientAuthentication:
+        Tls:
+            CertificateAuthorityArnList: 
+              - !Ref PCAARN
+      EnhancedMonitoring: DEFAULT
+      KafkaVersion: !Ref MSKKafkaVersion
+      NumberOfBrokerNodes: 3
+
+  MSKClusterNoMTLS:
+    Type: AWS::MSK::Cluster
+    Condition: noMTLS
+    Properties: 
+      BrokerNodeGroupInfo: 
+        ClientSubnets: 
+        - Fn::ImportValue:
+            !Sub "${VPCStack}-PrivateSubnetMSKOne"
+        - Fn::ImportValue:
+            !Sub "${VPCStack}-PrivateSubnetMSKTwo"
+        - Fn::ImportValue:
+            !Sub "${VPCStack}-PrivateSubnetMSKThree"
+        InstanceType: kafka.m5.large
+        SecurityGroups: [!GetAtt MSKSecurityGroup.GroupId]
+        StorageInfo: 
+          EBSStorageInfo:
+            VolumeSize: 1000
+      ClusterName: !Join
+                    - '-'
+                    - - 'MSKCluster'
+                      - !Ref 'AWS::StackName'
+      EncryptionInfo: 
+        EncryptionInTransit: 
+          ClientBroker: TLS_PLAINTEXT
+          InCluster: true
+      EnhancedMonitoring: DEFAULT
+      KafkaVersion: !Ref MSKKafkaVersion
+      NumberOfBrokerNodes: 3
+
+Outputs:
+  MSKSecurityGroupID: 
+    Description: The ID of the security group created for the MSK clusters
+    Value: !GetAtt MSKSecurityGroup.GroupId
+  SSHKafkaClientEC2Instance:
+    Description: SSH command for Kafka the EC2 instance
+    Value:
+      Fn::ImportValue:
+        !Sub "${BastionStack}-SSHKafkaClientEC2Instance"
+  KafkaClientEC2InstanceSecurityGroupId:
+    Description: The security group id for the EC2 instance
+    Value:
+      Fn::ImportValue:
+        !Sub "${BastionStack}-KafkaClientEC2InstanceSecurityGroupId"
+    Description: The Arn for the MSKMMCluster1 MSK cluster
+    Value: !If [MTLS, !Ref 'MSKClusterMTLS', !Ref 'MSKClusterNoMTLS']
+  SchemaRegistryUrl:
+    Description: The url for the Schema Registry
+    Value:
+      Fn::ImportValue:
+        !Sub "${BastionStack}-SchemaRegistryUrl"
+  MSKClusterArn:
+    Description: The Arn for the MSKMMCluster1 MSK cluster
+    Value: !If [MTLS, !Ref 'MSKClusterMTLS', !Ref 'MSKClusterNoMTLS']
+  VPCStackName:
+    Description: The name of the VPC Stack
+    Value:
+      Fn::ImportValue:
+        !Sub "${VPCStack}-VPCStackName"

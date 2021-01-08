@@ -1,0 +1,175 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: This template creates Kafka client Instance, Cloud9 bastion host, related security groups and calls another template to create the VPC and subnets
+
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Can contain only ASCII characters.
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+  MSKVPCStack:
+    Description: The name of the VPC stack
+    Type: String
+    Default: 'MSKClientVPC'
+
+Resources:
+  KafkaClientInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access via port 22 from BastionHostSecurityGroup
+      VpcId: 
+        Fn::ImportValue:
+          !Sub "${MSKVPCStack}-VPCID"  
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 10.0.0.0/24
+
+  Cloud9EC2Bastion:
+    Type: AWS::Cloud9::EnvironmentEC2
+    Properties: 
+      AutomaticStopTimeMinutes: 600
+      Description: "Cloud9 EC2 environment"
+      InstanceType: m5.large
+      Name: !Sub "${AWS::StackName}-Cloud9EC2Bastion"
+      SubnetId: 
+        Fn::ImportValue: 
+          !Sub "${MSKVPCStack}-PublicSubnet1"  
+      Tags: 
+        - Key: 'Purpose'
+          Value: 'Cloud9EC2BastionHostInstance'
+
+  KafkaClientEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: m5.large
+      KeyName: !Ref 'KeyName'
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SubnetId: 
+        Fn::ImportValue: 
+          !Sub "${MSKVPCStack}-PrivateSubnetMSK1"
+      SecurityGroupIds: [!GetAtt KafkaClientInstanceSecurityGroup.GroupId]
+      ImageId: !Ref LatestAmiId
+      Tags:
+        - Key: 'Name'
+          Value: 'KafkaClientInstance'
+      UserData: 
+        Fn::Base64: 
+          !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install python3.7 -y
+            
+            cd /home/ec2-user
+            wget https://bootstrap.pypa.io/get-pip.py
+            su -c "python3.7 get-pip.py --user" -s /bin/sh ec2-user
+            su -c "/home/ec2-user/.local/bin/pip3 install boto3 --user" -s /bin/sh ec2-user
+            
+            # install AWS CLI 2 - access with aws2
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            ./aws/install -b /usr/local/bin/aws2
+            
+            # Create dirs, get Apache Kafka 2.3.1, 2.4.0 and unpack it
+            su -c "mkdir -p kafka270" -s /bin/sh ec2-user
+            cd kafka270
+            su -c "wget https://archive.apache.org/dist/kafka/2.7.0/kafka_2.12-2.7.0.tgz" -s /bin/sh ec2-user
+            su -c "tar -xzf kafka_2.12-2.7.0.tgz --strip 1" -s /bin/sh ec2-user
+
+            # Initialize the Kafka cert trust store. Uncomment below line if using TLS
+            # su -c 'find /usr/lib/jvm/ -name "cacerts" -exec cp {} /tmp/kafka.client.truststore.jks \;' -s /bin/sh ec2-user
+
+            cd /tmp
+            su -c "mkdir -p kafka" -s /bin/sh ec2-user
+            su -c "aws s3 cp s3://reinvent2019-msk-liftandshift/setup-env-sasl.py /tmp/kafka" -l ec2-user
+
+            #setup bash env
+            su -c "echo 'export PS1=\"KafkaClientEC2Instance [\u@\h \W\\]$ \"' >> /home/ec2-user/.bash_profile" -s /bin/sh ec2-user
+            su -c "echo '[ -f /tmp/kafka/setup_env ] && . /tmp/kafka/setup_env' >> /home/ec2-user/.bash_profile" -s /bin/sh ec2-user
+
+            #setup aws Region
+            su -c "mkdir -p /home/ec2-user/.aws" -s /bin/sh ec2-user
+            su -c "cat > /home/ec2-user/.aws/config<<EOF
+            [default]
+            region = ${AWS::Region}
+            EOF" -s /bin/sh ec2-user
+
+  EC2Role: 
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: "/"
+     
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      Roles:
+        - !Ref EC2Role
+
+  KafkaClientEC2InstancePolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: KafkaClientEC2InstancePolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:ListBucket
+              - s3:GetObject
+            Resource: 'arn:aws:s3:::reinvent2019-msk-liftandshift/*'
+          - Effect: Allow
+            Action:
+              - kafka:GetBootstrapBrokers
+              - kafka:DescribeCluster
+            Resource: '*'
+      Roles:
+        - !Ref EC2Role
+
+Outputs:
+  VPCId: 
+    Description: The ID of the VPC created
+    Value: 
+      Fn::ImportValue:
+          !Sub "${MSKVPCStack}-VPCID"
+  PrivateSubnetMSK1: 
+    Description: The ID of private subnet one created
+    Value: 
+      Fn::ImportValue:
+          !Sub "${MSKVPCStack}-PrivateSubnetMSK1"
+  PrivateSubnetMSK2: 
+    Description: The ID of private subnet two created
+    Value: 
+      Fn::ImportValue:
+          !Sub "${MSKVPCStack}-PrivateSubnetMSK2"
+  PrivateSubnetMSK3: 
+    Description: The ID of private subnet three created
+    Value: 
+      Fn::ImportValue:
+          !Sub "${MSKVPCStack}-PrivateSubnetMSK3"
+  KafkaClientEC2InstancePrivateDNS:
+    Description: The Public DNS for the EC2 instance
+    Value: !GetAtt KafkaClientEC2Instance.PrivateDnsName
+  SSHKafkaClientEC2Instance:
+    Description: SSH command for Kafka the EC2 instance
+    Value: !Sub ssh -A ec2-user@${KafkaClientEC2Instance.PrivateDnsName}
+    Export:
+      Name: !Sub "${AWS::StackName}-SSHKafkaClientEC2Instance"
+  KafkaClientInstanceSecurityGroup:
+    Description: SecurityGroup ID of Kafka client instance
+    Value: !GetAtt KafkaClientInstanceSecurityGroup.GroupId
+  MSKVPCStackName:
+    Description: The name of the VPC Stack
+    Value: 
+      Fn::ImportValue:
+          !Sub "${MSKVPCStack}-VPCStackName"

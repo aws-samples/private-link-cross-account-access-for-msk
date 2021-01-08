@@ -1,0 +1,316 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  MSKKafkaVersion:
+    Type: String
+    Default: 2.3.1
+    AllowedValues:
+      - 2.2.1
+      - 2.3.1
+      - 2.4.1.1
+      - 2.5.1
+      - 2.6.0
+  TLSMutualAuthentication:
+      Type: String
+      Default: false
+      Description: Whether TLS Mutual Auth should be enabled for the Amazon MSK cluster.
+      AllowedValues:
+        - true
+        - false
+  PCAARN:
+      Type: String
+      Default: ''
+      AllowedPattern: 'arn:aws:acm-pca:[us\-east\-1|us\-east\-2|eu\-west\-1]{9}:\d{12}:certificate-authority\/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}|^$'
+      ConstraintDescription: Not a Valid ACM PCA ARN
+      Description: Provide the ARN for an ACM PCA in your account
+  VPCCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR Range for the VPC
+  PublicSubnet1CIDR:
+    Type: String
+    Default: 10.0.0.0/24
+    Description: CIDR Range for public subnet
+  PrivateSubnetMSK1CIDR:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR Range for private subnet 1
+  PrivateSubnetMSK2CIDR:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR Range for private subnet 2
+  PrivateSubnetMSK3CIDR:
+    Type: String
+    Default: 10.0.3.0/24
+    Description: CIDR Range for private subnet 3
+  PublicSubnet1AZ:
+    Type: String
+    Default: ''
+    Description: Availability zone for public subnet
+  PrivateSubnet1AZ:
+    Type: String
+    Default: ''
+    Description: Availability zone for private subnet 1
+  PrivateSubnet2AZ:
+    Type: String
+    Default: ''
+    Description: Availability zone for private subnet 2
+  PrivateSubnet3AZ:
+    Type: String
+    Default: ''
+    Description: Availability zone for private subnet 3 
+
+Conditions: 
+  MTLS: !Equals [ !Ref TLSMutualAuthentication, true ]
+  noMTLS: !Equals [ !Ref TLSMutualAuthentication, false ]
+  IsParamPublicSubnet1: !Not [!Equals [!Ref PublicSubnet1AZ, '']]
+  IsParamPrivateSubnet1: !Not [!Equals [!Ref PrivateSubnet1AZ, '']]
+  IsParamPrivateSubnet2: !Not [!Equals [!Ref PrivateSubnet2AZ, '']]
+  IsParamPrivateSubnet3: !Not [!Equals [!Ref PrivateSubnet3AZ, '']]
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      CidrBlock: !Ref VPCCIDR 
+      Tags:
+        - Key: 'Name'
+          Value: 'MSKVPC'
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::If: [IsParamPublicSubnet1, !Ref PublicSubnet1AZ, !Select [0, Fn::GetAZs: !Ref 'AWS::Region']]
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: 'Name'
+          Value: 'PublicSubnet1'
+  PrivateSubnetMSK1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::If : [IsParamPrivateSubnet1, !Ref PrivateSubnet1AZ, !Select [0, Fn::GetAZs: !Ref 'AWS::Region']]
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref PrivateSubnetMSK1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: 'Name'
+          Value: 'PrivateSubnetMSK1'
+  PrivateSubnetMSK2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::If : [IsParamPrivateSubnet2, !Ref PrivateSubnet2AZ, !Select [1, Fn::GetAZs: !Ref 'AWS::Region']]
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref PrivateSubnetMSK2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: 'Name'
+          Value: 'PrivateSubnetMSK2'
+  PrivateSubnetMSK3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::If : 
+          [IsParamPrivateSubnet3, !Ref PrivateSubnet3AZ, !Select [2, Fn::GetAZs: !Ref 'AWS::Region']]
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref PrivateSubnetMSK3CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: 'Name'
+          Value: 'PrivateSubnetMSK3'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachement:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref 'VPC'
+      InternetGatewayId: !Ref 'InternetGateway'
+
+  NATEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachement
+    Properties: 
+      Domain: vpc
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt NATEIP.AllocationId
+      SubnetId: !Ref 'PublicSubnet1'
+      Tags: 
+        - Key: 'Name'
+          Value: 'ConfluentKafkaNATGateway'
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachement
+    Properties:
+      RouteTableId: !Ref 'PublicRouteTable'
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'InternetGateway'
+  PublicSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'PrivateRouteTable'
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref 'NATGateway'
+
+  PrivateSubnetMSK1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetMSK1
+  PrivateSubnetMSK2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetMSK2
+  PrivateSubnetMSK3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetMSK3
+
+  KafkaClientInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access via port 22 from BastionHostSecurityGroup
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: !Ref PublicSubnet1CIDR
+
+  MSKSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MSK Security Group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 2181
+        ToPort: 2181
+        SourceSecurityGroupId: !GetAtt KafkaClientInstanceSecurityGroup.GroupId
+      - IpProtocol: tcp
+        FromPort: 9094
+        ToPort: 9094
+        SourceSecurityGroupId: !GetAtt KafkaClientInstanceSecurityGroup.GroupId
+      - IpProtocol: tcp
+        FromPort: 9092
+        ToPort: 9092
+        SourceSecurityGroupId: !GetAtt KafkaClientInstanceSecurityGroup.GroupId
+
+  MSKClusterMTLS:
+    Type: AWS::MSK::Cluster
+    Condition: MTLS
+    Properties: 
+      BrokerNodeGroupInfo: 
+        ClientSubnets: 
+        - !Ref PrivateSubnetMSK1
+        - !Ref PrivateSubnetMSK2
+        - !Ref PrivateSubnetMSK3
+        InstanceType: kafka.m5.large
+        SecurityGroups: [!GetAtt MSKSecurityGroup.GroupId]
+        StorageInfo: 
+          EBSStorageInfo:
+            VolumeSize: 1000
+      ClusterName: !Join
+                    - '-'
+                    - - 'MSKCluster'
+                      - !Ref 'AWS::StackName'
+      EncryptionInfo: 
+        EncryptionInTransit: 
+          ClientBroker: TLS_PLAINTEXT
+          InCluster: true
+      ClientAuthentication:
+        Tls:
+            CertificateAuthorityArnList: 
+              - !Ref PCAARN
+      EnhancedMonitoring: DEFAULT
+      KafkaVersion: !Ref MSKKafkaVersion
+      NumberOfBrokerNodes: 3
+
+  MSKClusterNoMTLS:
+    Type: AWS::MSK::Cluster
+    Condition: noMTLS
+    Properties: 
+      BrokerNodeGroupInfo: 
+        ClientSubnets: 
+        - !Ref PrivateSubnetMSK1
+        - !Ref PrivateSubnetMSK2
+        - !Ref PrivateSubnetMSK3
+        InstanceType: kafka.m5.large
+        SecurityGroups: [!GetAtt MSKSecurityGroup.GroupId]
+        StorageInfo: 
+          EBSStorageInfo:
+            VolumeSize: 1000
+      ClusterName: !Join
+                    - '-'
+                    - - 'MSKCluster'
+                      - !Ref 'AWS::StackName'
+      EncryptionInfo: 
+        EncryptionInTransit: 
+          ClientBroker: TLS_PLAINTEXT
+          InCluster: true
+      EnhancedMonitoring: DEFAULT
+      KafkaVersion: !Ref MSKKafkaVersion
+      NumberOfBrokerNodes: 3
+
+Outputs:
+  VPCId: 
+    Description: The ID of the VPC created
+    Value: !Ref 'VPC'
+    Export:
+      Name: !Sub "${AWS::StackName}-VPCID"
+  PublicSubnet1: 
+    Description: The name of the public subnet created
+    Value: !Ref 'PublicSubnet1'
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnet1"
+  PrivateSubnetMSK1: 
+    Description: The ID of private subnet one created
+    Value: !Ref 'PrivateSubnetMSK1'
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnetMSK1"
+  PrivateSubnetMSK2: 
+    Description: The ID of private subnet two created
+    Value: !Ref 'PrivateSubnetMSK2'
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnetMSK2"
+  PrivateSubnetMSK3: 
+    Description: The ID of private subnet three created
+    Value: !Ref 'PrivateSubnetMSK3'
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnetMSK3"
+  PublicSubnet1CIDR:
+    Description: VPC CIDR range 
+    Value: !Ref 'PublicSubnet1CIDR'
+  MSKSecurityGroupID: 
+    Description: The ID of the security group created for the MSK clusters
+    Value: !GetAtt MSKSecurityGroup.GroupId
+  MSKClusterArn:
+    Description: The Arn for the MSKMMCluster1 MSK cluster
+    Value: !If [MTLS, !Ref 'MSKClusterMTLS', !Ref 'MSKClusterNoMTLS']
+  
