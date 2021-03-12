@@ -30,7 +30,7 @@ Package the jar file and run it to create the NLB, Target groups, VPC endpoint s
     
 
    mskClusterArn is the ARN of you MSK cluster (required), 
-   allowedPrincipal is the ARN of the role with policy permissions to create NLB, target groups, VPC endpoints and Dynamo DB table (required),
+   allowedPrincipal is the identity principal in Account B that has access to the endpoint service in Account A, and can be IAM users, IAM roles or AWS Accounts,
    region is the region your cluster is in (assumes us-east-1 if not provided), 
    targetPort is the port your MSK cluster Nodes are listening on (defaults to 9094), 
    lbListenerPort is the port that NLB listeners should listen on (defaults to 9094)
@@ -40,14 +40,7 @@ Package the jar file and run it to create the NLB, Target groups, VPC endpoint s
     python createBrokerEndpointsDDBReadOnyRole.py --profile <cluster_account_profile_name> \
         --arn <user_arn>
 
-### 4. Add MSK Client user/role (Customer Account B) in the Endpoint Services Permissions
-
-    python addRoleToEndpointService.py --profile <cluster_account_profile_name> --<user_arn> --region us-east-1
-
-   ARN to be passed is the ARN of the user in Customer Account B to which you will use to add VPC endpoints. This user/role needs to be whitelisted in Customer account A VPC Endpoint services
-   Profile param is optional, if passed, it should be the AWS CLI profile with credentials for Customer Account A
-
-### 5. In Customer Account B, Get Availability zone information of the Broker nodes for Amazon MSK Cluster
+### 4. In Customer Account B, Get Availability zone information of the Broker nodes for Amazon MSK Cluster
 
     python remoteaccountpython/get-availabilityzones.py --region <region_name> \
         --profile <client_account_profile_name> \ 
@@ -58,7 +51,7 @@ Package the jar file and run it to create the NLB, Target groups, VPC endpoint s
    Here roleARN is the ARN received after running previous command
    This will output the availability zones in which Customer Account A MSK Cluster has the Broker Nodes. Note that because you are running this using the Customer B account profile, the availability zone Names will map to same availability zone IDs and hence can be used directly to setup subnets for Apache kafka clients
 
-### 6. Setup Apache Kafka Client instance in Customer Account B
+### 5. Setup Apache Kafka Client instance in Customer Account B
 
 In Account B:
 
@@ -74,7 +67,7 @@ In Account B:
     
    Here Parameter value for AZ names is the output from previous command. Note than the cloud formation template will not fail but create subnet in random AZs if these params are not passed. However, for the Apache Kafka client instance to be able to talk to the remote Amazon MSK cluster via all of the Endpoints setup in cluster account, it is important to pass these params.
 
-   2. Deploy the CloudFormatin template to setup the Apache Kafka Client instance
+   2. Deploy the CloudFormation template to setup the Apache Kafka Client instance
 
         ```shell
         aws cloudformation deploy \
