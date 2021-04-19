@@ -1,10 +1,43 @@
 ## How to setup Apache Kafka client and connect it to Amazon MSK cluster running in remote account using Private link (Multiple NLBs)
+The code included in this repository and steps described below can be used 
+to setup the PrivateLink Connectivity Pattern with Multiple NLBs to access an Amazon MSK Cluster
+from a remote account. This pattern forms pattern 1 in the 
+blog post - [How Goldman Sachs builds cross-account connectivity to their Amazon MSK clusters with AWS PrivateLink](https://aws.amazon.com/blogs/big-data/how-goldman-sachs-builds-cross-account-connectivity-to-their-amazon-msk-clusters-with-aws-privatelink/).
 
 You will need access to two AWS accounts for this setup:
 - Customer Account A: Account in which Amazon MSK Cluster will be setup.
 - Customer Account B: Account in which Apache Kafka client will be setup.
 
-You can repeat the steps for Customer Account B for any number of accounts you want to add as consumer for Amazon MSK cluster running in Customer Account A
+The Java code identifies the ENIs and associated IP addresses corresponding to each of the Amazon MSK broker nodes in Account A, 
+creates target groups with those IP addresses, creates NLBs for each of the target groups and listeners for each NLB and 
+associates them with the NLBs. It then creates a VPC endpoint service for each of the NLBs. 
+The code accepts a number of parameters, but the following are the important ones:
+1.	mskClusterArn – This is the Amazon Resource Name (ARN) of the Amazon MSK cluster in Account A
+2.	region – This is the AWS Region where the code is running.
+3.	allowedPrincipal – This is an important parameter and refers to the identity principal in Account B that has access to the endpoint service in Account A, and can be IAM users, IAM roles or AWS Accounts. For more information, see endpoint service permissions.
+4.	lbListenerPort: This is the port the NLB listeners for each Amazon MSK broker will be listening on. For TLS connections, it should be 9094, and for PLAINTEXT, it should be 9092.
+5.	targetPort: This is the port the target group associated with each NLB listener will be forwarding the request to the associated target, in this case, the IPv4 address of the Amazon MSK broker ENI.
+      
+The Java code also creates a DynamoDB table and updates it with information on the created endpoint services, 
+including the broker id, the DNS name of the service endpoint, the NLB name, and the DNS name of the Amazon MSK broker endpoint. 
+The purpose of the DynamoDB table and this information is to enable client accounts like Account B to be able to asynchronously and 
+independently query the table, get the information, and use it to create the necessary resources on their side. 
+Consequently, each client Account needs to be provided the requisite permissions on the DynamoDB table for the service endpoints it is interested in.
+
+In Account B, you need to find out the Availability Zones (AZs) you need to use to create the VPC endpoints in, 
+to access the service endpoints in Account A. This is because, AZs may not be the same across accounts. 
+For example, us-east-1a in Account A may not be the same AZ as us-east-1a in Account B. So, it is important to find out 
+the AZs in Account B that correspond to the same AZ ids in Account A and use them. 
+The python script get-availabilityzones.py included in the GitHub repository allows you to do so. With the information at hand, 
+you can create subnets in the appropriate AZs, and use them to create the VPC endpoints pointing to the service 
+endpoints in Account A. Finally, you need to create a Route 53 private hosted zone and add resource record sets 
+that alias the broker DNS endpoints to the VPC endpoints. The create-msk-vpc-endpoints-r53-hosted-zone.py and 
+create-msk-vpc-endpoints.py scripts included in the GitHub repository help create those resources.
+
+You can repeat the steps for Customer Account B for any number of accounts you want to add as consumer for Amazon MSK 
+cluster running in Customer Account A.
+
+Here are the steps to setup the cross-account access pattern for Amazon MSK with AWS PrivateLink:
 
 ### 1. Setup Amazon MSK Cluster in Account A
 Note: Skip this step if you already have an Amazon MSK Cluster setup
