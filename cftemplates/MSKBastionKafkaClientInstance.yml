@@ -34,6 +34,7 @@ Resources:
       AutomaticStopTimeMinutes: 600
       Description: "Cloud9 EC2 environment"
       InstanceType: m5.large
+      ImageId: "amazonlinux-2-x86_64"
       Name: !Sub "${AWS::StackName}-Cloud9EC2Bastion"
       SubnetId: 
         Fn::ImportValue: 
