@@ -144,13 +144,14 @@ If you'd like to tear down the resources created in this walkthrough, be sure to
 3. The `MSKClient` stack in your client account(s)/Account B
 4. The `MSKClientVPC` stack in your client account(s)/Account B
 5. The IAM role created in Step 3 in your cluster account/Account A
-6. To delete the resources created by the JAR we ran, you can use the same command, and add "-del" to the end of the command 
+6. To delete the resources created by the JAR we ran, you can use the same command, and add "-del" to the end of the command.
 
+    ```shell
     java -jar PrivateLinkCrossAccount-1.0-SNAPSHOT.jar \
         --mskClusterArn <cluster_arn> --region <region_name> \
         --allowedPrincipal <role_arn> --targetPort <port_num> \
         --lbListenerPort <port_num> -del
-
+    ```
 
 7. The DynamoDB Table in your cluster account/Account A, named `Broker_Endpoint_Services`.
 8. Finally, the `MSKCluster` stack in your cluster account/Account A.
