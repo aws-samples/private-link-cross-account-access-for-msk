@@ -59,7 +59,7 @@ Next, package the jar file and run it to create the NLB, Target groups, VPC endp
 
     mvn clean package
 
-2. Once the JAR has been packaged, you can move into the newly created /target/ directory to run it:
+2. Once the JAR has been packaged, you can move into the newly created /target/ directory to run it.
 
 Note: If you are following along with this tutorial, you will need to go to your Account B and create the 'allowedPrincipal' before running the following command. Example: For this walkthrough, we used an IAM User with account administrative access to run CLI commands from our IDE. You'll be able to use this User again in step 3. 
 
@@ -144,18 +144,21 @@ If you'd like to tear down the resources created in this walkthrough, be sure to
 3. The `MSKClient` stack in your client account(s)/Account B
 4. The `MSKClientVPC` stack in your client account(s)/Account B
 5. The IAM role created in Step 3 in your cluster account/Account A
-6. To delete the resources created by the JAR we ran, you can use the same command, and add "-del" to the end of the command: 
+6. To delete the resources created by the JAR we ran, you can use the same command, and add "-del" to the end of the command 
 
     java -jar PrivateLinkCrossAccount-1.0-SNAPSHOT.jar \
         --mskClusterArn <cluster_arn> --region <region_name> \
         --allowedPrincipal <role_arn> --targetPort <port_num> \
         --lbListenerPort <port_num> -del
 
+
 7. The DynamoDB Table in your cluster account/Account A, named `Broker_Endpoint_Services`.
 8. Finally, the `MSKCluster` stack in your cluster account/Account A.
 
 
-## Additional Note: the setup process for this pattern can be fully automated to make sure even if Amazon MSK cluster is scaled in or out (e.g. adding more brokers), the appropriate resources are created in both the cluster and client accounts to make sure the solution continues to work as expected. 
+## Additional Note: 
+the setup process for this pattern can be fully automated to make sure even if Amazon MSK cluster is scaled in or out (e.g. adding more brokers), the appropriate resources are created in both the cluster and client accounts to make sure the solution continues to work as expected. 
+
  - A lambda function continuously monitors the MSK cluster for any change.
  - If a new broker is added to the MSK cluster, lambda function creates the required NLB and endpoint services. It also updates a DynamoDB table with the new changes.
  - A lambda function is setup in client account which listen to the DynamoDB table stream in cluster account. If a new record is added to the DynamoDB, the lambda function creates the required endpoint interface and make the required changes into Routh53 hosted zone and record set.
