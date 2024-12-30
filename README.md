@@ -57,16 +57,20 @@ Next, package the jar file and run it to create the NLB, Target groups, VPC endp
 
 1. Package the JAR file. If you cloned this sample repository, we recommend you to use Maven by running:
 
+    ```shell
     mvn clean package
+    ```
 
 2. Once the JAR has been packaged, you can move into the newly created /target/ directory to run it.
 
-Note: If you are following along with this tutorial, you will need to go to your Account B and create the 'allowedPrincipal' before running the following command. Example: For this walkthrough, we used an IAM User with account administrative access to run CLI commands from our IDE. You'll be able to use this User again in step 3. 
+    Note: If you are following along with this tutorial, you will need to go to your Account B and create the 'allowedPrincipal' before running the following command. Example: For this walkthrough, we used an IAM User with account administrative access to run CLI commands from our IDE. You'll be able to use this User again in step 3. 
 
+    ```shell
     java -jar PrivateLinkCrossAccount-1.0-SNAPSHOT.jar \
         --mskClusterArn <cluster_arn> --region <region_name> \
         --allowedPrincipal <role_arn> --targetPort <port_num> \
         --lbListenerPort <port_num>
+    ```
 
    mskClusterArn is the ARN of you MSK cluster (required), 
    allowedPrincipal is the identity principal in Account B that has access to the endpoint service in Account A, and can be IAM users, IAM roles or AWS Accounts,
