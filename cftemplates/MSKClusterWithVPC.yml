@@ -2,13 +2,12 @@ AWSTemplateFormatVersion: '2010-09-09'
 Parameters:
   MSKKafkaVersion:
     Type: String
-    Default: 2.3.1
+    Default: 3.6.0
     AllowedValues:
-      - 2.2.1
-      - 2.3.1
-      - 2.4.1.1
-      - 2.5.1
-      - 2.6.0
+      - 3.3.2
+      - 3.4.0
+      - 3.5.1
+      - 3.7.x
   TLSMutualAuthentication:
       Type: String
       Default: false

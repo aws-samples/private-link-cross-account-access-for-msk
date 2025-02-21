@@ -74,5 +74,5 @@ except ClientError as err:
 remoteAZs = getAZsfromService(serviceEndpoints, ec2ClientRemote)
 for AZ in remoteAZs:
     zoneId = getAZId(AZ, ec2ClientRemote)
-    print getAZfromId(zoneId, session.client('ec2'))
+    print(getAZfromId(zoneId, session.client('ec2')))
     
