@@ -9,7 +9,7 @@ You will need access to two AWS accounts for this setup:
 - Customer Account B: Account in which Apache Kafka client will be setup.
 
 The Java code identifies the ENIs and associated IP addresses corresponding to each of the Amazon MSK broker nodes in Account A, 
-creates target groups with those IP addresses, creates NLBs for each of the target groups and listeners for each NLB and 
+creates target groups with those IP addresses, creates NLBs in the same subnets for each of the target groups and listeners for each NLB and 
 associates them with the NLBs. It then creates a VPC endpoint service for each of the NLBs. 
 The code accepts a number of parameters, but the following are the important ones:
 1.	mskClusterArn – This is the Amazon Resource Name (ARN) of the Amazon MSK cluster in Account A
@@ -65,6 +65,7 @@ Next, package the jar file and run it to create the NLB, Target groups, VPC endp
 
 Note: If you are following along with this tutorial, you will need to go to your Account B and create the 'allowedPrincipal' before running the following command. Example: For this walkthrough, we used an IAM User with account administrative access to run CLI commands from our IDE. You'll be able to use this User again in step 3. 
 
+    mvn package
     java -jar PrivateLinkCrossAccount-1.0-SNAPSHOT.jar \
         --mskClusterArn <cluster_arn> --region <region_name> \
         --allowedPrincipal <role_arn> --targetPort <port_num> \
